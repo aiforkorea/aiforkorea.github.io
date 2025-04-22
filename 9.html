@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>간단한 워크플로 에디터</title>
+<style>
+  #editor-container {
+    width: 800px;
+    height: 500px;
+    border: 1px solid black;
+    position: relative;
+  }
+  .draggable {
+    width: 80px;
+    height: 50px;
+    background-color: lightblue;
+    border: 1px solid blue;
+    position: absolute;
+    cursor: grab;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>간단한 워크플로 에디터</h1>
+
+<div id="toolbox">
+  <div class="draggable" draggable="true" id="process">프로세스</div>
+  <div class="draggable" draggable="true" id="decision">결정</div>
+</div>
+
+<div id="editor-container">
+  </div>
+
+<script>
+  const toolbox = document.getElementById('toolbox');
+  const editorContainer = document.getElementById('editor-container');
+  let draggedElement = null;
+
+  toolbox.addEventListener('dragstart', (event) => {
+    draggedElement = event.target.cloneNode(true); // 복사본을 드래그
+    editorContainer.appendChild(draggedElement);
+    draggedElement.style.position = 'absolute'; // 에디터 컨테이너 안에서의 위치 설정
+    draggedElement.style.left = '-1000px'; // 초기 위치를 화면 밖으로 이동
+    draggedElement.style.top = '-1000px';
+    event.dataTransfer.setData('text/plain', event.target.id); // 데이터 전달 (여기서는 ID만)
+  });
+
+  editorContainer.addEventListener('dragover', (event) => {
+    event.preventDefault(); // drop 이벤트 허용
+  });
+
+  editorContainer.addEventListener('drop', (event) => {
+    event.preventDefault();
+    if (draggedElement) {
+      draggedElement.style.left = (event.clientX - editorContainer.getBoundingClientRect().left - draggedElement.offsetWidth / 2) + 'px';
+      draggedElement.style.top = (event.clientY - editorContainer.getBoundingClientRect().top - draggedElement.offsetHeight / 2) + 'px';
+      draggedElement = null; // 드래그 종료
+    }
+  });
+</script>
+
+</body>
+</html>
