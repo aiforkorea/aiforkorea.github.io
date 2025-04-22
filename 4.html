@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>워크플로 에디터</title>
+    <style>
+        body { font-family: sans-serif; display: flex; margin: 0; }
+        #toolbox {
+            width: 150px;
+            border-right: 1px solid lightgray;
+            padding: 10px;
+        }
+        .tool {
+            background-color: #f0f0f0;
+            border: 1px solid gray;
+            padding: 8px;
+            margin-bottom: 8px;
+            cursor: grab;
+            text-align: center;
+        }
+        #workflowCanvas {
+            flex-grow: 1;
+            border: 1px solid black;
+            cursor: default;
+            position: relative; /* 자식 요소 absolute positioning 기준 */
+            overflow: hidden; /* 캔버스 넘치는 연결선 처리 */
+        }
+        .element {
+            border: 1px solid black;
+            padding: 10px;
+            text-align: center;
+            cursor: grab;
+            position: absolute;
+        }
+        .connector {
+            width: 10px;
+            height: 10px;
+            background-color: lightblue;
+            border: 1px solid blue;
+            border-radius: 5px;
+            position: absolute;
+            cursor: crosshair;
+        }
+        .connection {
+            position: absolute;
+            background-color: black;
+            z-index: -1; /* 요소 뒤에 그림 */
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbox">
+        <h3>도구</h3>
+        <div class="tool" draggable="true" data-type="start">시작</div>
+        <div class="tool" draggable="true" data-type="task">태스크</div>
+        <div class="tool" draggable="true" data-type="gateway">게이트웨이</div>
+        <div class="tool" draggable="true" data-type="end">종료</div>
+    </div>
+    <div id="workflowCanvas"></div>
+
+    <script>
+        const toolbox = document.getElementById('toolbox');
+        const workflowCanvas = document.getElementById('workflowCanvas');
+
+        let elements = [];
+        let connections = [];
+        let currentDragElement = null;
+        let dragOffsetX, dragOffsetY;
+        let isDrawingConnection = false;
+        let connectionStartPoint = null;
+        let connectionEndPoint = null;
+        let tempConnectionLine = null;
+
+        // --- 요소 생성 (드래그 앤 드롭) ---
+        toolbox.addEventListener('dragstart', (event) => {
+            currentDragElement = event.target.cloneNode(true);
+            dragOffsetX = event.clientX - event.target.getBoundingClientRect().left;
+            dragOffsetY = event.clientY - event.target.getBoundingClientRect().top;
+        });
+
+        workflowCanvas.addEventListener('dragover', (event) => {
+            event.preventDefault();
+        });
+
+        workflowCanvas.addEventListener('drop', (event) => {
+            if (currentDragElement && currentDragElement.classList.contains('tool')) {
+                const type = currentDragElement.getAttribute('data-type');
+                const id = 'element-' + Date.now();
+                const x = event.clientX - workflowCanvas.getBoundingClientRect().left - dragOffsetX;
+                const y = event.clientY - workflowCanvas.getBoundingClientRect().top - dragOffsetY;
+
+                const newElement = document.createElement('div');
+                newElement.classList.add('element');
+                newElement.textContent = type;
+                newElement.style.left = x + 'px';
+                newElement.style.top = y + 'px';
+                newElement.setAttribute('id', id);
+                newElement.dataset.type = type;
+
+                // 이동 이벤트 리스너
+                newElement.addEventListener('mousedown', startDrag);
+
+                // 연결점 생성
+                createConnectors(newElement);
+
+                workflowCanvas.appendChild(newElement);
+                elements.push({ id: id, type: type, x: x, y: y, width: newElement.offsetWidth, height: newElement.offsetHeight });
+                currentDragElement = null;
+            }
+        });
+
+        function createConnectors(element) {
+            const connectorPositions = [
+                { x: 0.5, y: 0, type: 'top' },
+                { x: 1, y: 0.5, type: 'right' },
+                { x: 0.5, y: 1, type: 'bottom' },
+                { x: 0, y: 0.5, type: 'left' }
+            ];
+
+            connectorPositions.forEach(pos => {
+                const connector = document.createElement('div');
+                connector.classList.add('connector');
+                connector.style.left = (element.offsetWidth * pos.x - 5) + 'px';
+                connector.style.top = (element.offsetHeight * pos.y - 5) + 'px';
+                connector.dataset.elementId = element.id;
+                connector.dataset.connectorType = pos.type;
+
+                // 연결 시작 이벤트 리스너
+                connector.addEventListener('mousedown', startConnectionDraw);
+
+                element.appendChild(connector);
+            });
+        }
+
+        // --- 요소 이동 (드래그) ---
+        function startDrag(event) {
+            currentDragElement = event.target;
+            dragOffsetX = event.clientX - currentDragElement.getBoundingClientRect().left;
+            dragOffsetY = event.clientY - currentDragElement.getBoundingClientRect().top;
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', endDrag);
+            currentDragElement.style.cursor = 'grabbing';
+        }
+
+        function drag(event) {
+            if (currentDragElement && !isDrawingConnection) {
+                const x = event.clientX - workflowCanvas.getBoundingClientRect().left - dragOffsetX;
+                const y = event.clientY - workflowCanvas.getBoundingClientRect().top - dragOffsetY;
+                currentDragElement.style.left = x + 'px';
+                currentDragElement.style.top = y + 'px';
+
+                // 요소 정보 업데이트
+                const elementData = elements.find(el => el.id === currentDragElement.id);
+                if (elementData) {
+                    elementData.x = x;
+                    elementData.y = y;
+                    elementData.width = currentDragElement.offsetWidth;
+                    elementData.height = currentDragElement.offsetHeight;
+                }
+                drawConnections(); // 연결선 업데이트
+            }
+        }
+
+        function endDrag() {
+            if (currentDragElement) {
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', endDrag);
+                currentDragElement.style.cursor = 'grab';
+                currentDragElement = null;
+            }
+        }
+
+        // --- 연결선 그리기 (드래그) ---
+        function startConnectionDraw(event) {
+            isDrawingConnection = true;
+            connectionStartPoint = event.target;
+            const startElement = elements.find(el => el.id === connectionStartPoint.dataset.elementId);
+            const startX = parseInt(connectionStartPoint.style.left) + startElement.x + 5;
+            const startY = parseInt(connectionStartPoint.style.top) + startElement.y + 5;
+            connectionEndPoint = { x: startX, y: startY };
+
+            tempConnectionLine = document.createElement('div');
+            tempConnectionLine.classList.add('connection');
+            tempConnectionLine.style.width = '0px';
+            tempConnectionLine.style.height = '2px';
+            tempConnectionLine.style.backgroundColor = 'red';
+            tempConnectionLine.style.transformOrigin = '0 0';
+            workflowCanvas.appendChild(tempConnectionLine);
+
+            document.addEventListener('mousemove', drawTempConnection);
+            document.addEventListener('mouseup', endConnectionDraw);
+            event.stopPropagation(); // 요소 이동과의 충돌 방지
+        }
+
+        function drawTempConnection(event) {
+            if (isDrawingConnection && connectionStartPoint) {
+                const endX = event.clientX - workflowCanvas.getBoundingClientRect().left;
+                const endY = event.clientY - workflowCanvas.getBoundingClientRect().top;
+                connectionEndPoint = { x: endX, y: endY };
+                drawConnectionLine(tempConnectionLine, connectionStartPoint, connectionEndPoint);
+            }
+        }
+
+        function endConnectionDraw(event) {
+            if (isDrawingConnection && connectionStartPoint) {
+                isDrawingConnection = false;
+                document.removeEventListener('mousemove', drawTempConnection);
+                document.removeEventListener('mouseup', endConnectionDraw);
+
+                const targetConnector = event.target;
+                if (targetConnector && targetConnector.classList.contains('connector') && targetConnector !== connectionStartPoint) {
+                    const startElementId = connectionStartPoint.dataset.elementId;
+                    const endElementId = targetConnector.dataset.elementId;
+                    if (startElementId !== endElementId) {
+                        connections.push({ start: startElementId, end: endElementId });
+                        drawConnections();
+                    }
+                }
+                if (tempConnectionLine) {
+                    tempConnectionLine.remove();
+                    tempConnectionLine = null;
+                }
+                connectionStartPoint = null;
+                connectionEndPoint = null;
+            }
+        }
+
+        // --- 연결선 그리기 ---
+        function drawConnections() {
+            // 기존 연결선 삭제
+            workflowCanvas.querySelectorAll('.connection:not(red)').forEach(conn => conn.remove());
+
+            connections.forEach(conn => {
+                const startElement = elements.find(el => el.id === conn.start);
+                const endElement = elements.find(el => el.id === conn.end);
+
+                if (startElement && endElement) {
+                    // 연결 시작점 찾기
+                    const startConnector = startElement.querySelector('.connector');
+                    const startX = startElement.x + startElement.offsetWidth / 2;
+                    const startY = startElement.y + startElement.offsetHeight / 2;
+
+                    // 연결 끝점 찾기
+                    const endConnector = endElement.querySelector('.connector');
+                    const endX = endElement.x + endElement.offsetWidth / 2;
+                    const endY = endElement.y + endElement.offsetHeight / 2;
+
+                    const line = document.createElement('div');
+                    line.classList.add('connection');
+                    drawConnectionLine(line, { x: startX, y: startY }, { x: endX, y: endY });
+                    workflowCanvas.appendChild(line);
+                }
+            });
+        }
+
+        function drawConnectionLine(lineElement, start, end) {
+            const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+            const angle = Math.atan2(end.y - start.y, end.x - start.x);
+            lineElement.style.width = distance + 'px';
+            lineElement.style.height = '2px';
+            lineElement.style.left = start.x + 'px';
+            lineElement.style.top = start.y - 1 + 'px';
+            lineElement.style.transformOrigin = '0 0';
+            lineElement.style.transform = `rotate(${angle}rad)`;
+        }
+
+        // --- 요소 삭제 (Delete 키) ---
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Delete' && currentDragElement && currentDragElement.classList.contains('element')) {
+                const elementIdToDelete = currentDragElement.id;
+
+                // 연결된 선 제거
+                connections = connections.filter(conn => conn.start !== elementIdToDelete && conn.end !== elementIdToDelete);
+                drawConnections();
+
+                // 요소 제거
+                elements = elements.filter(el => el.id !== elementIdToDelete);
+                currentDragElement.remove();
+                currentDragElement = null;
+            }
+        });
+    </script>
+</body>
+</html>
