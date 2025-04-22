@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>워크플로우 에디터</title>
+    <style>
+        #workflow-container {
+            border: 1px solid #ccc;
+            width: 800px;
+            height: 500px;
+            position: relative;
+            overflow: auto;
+        }
+        .node {
+            position: absolute;
+            border: 1px solid blue;
+            padding: 10px;
+            cursor: grab;
+        }
+        .start-node {
+            background-color: lightgreen;
+        }
+        .task-node {
+            background-color: lightskyblue;
+        }
+        .end-node {
+            background-color: lightcoral;
+        }
+        .connector {
+            position: absolute;
+            border-bottom: 2px solid black;
+        }
+    </style>
+</head>
+<body>
+    <h1>워크플로우 에디터</h1>
+    <div id="workflow-container">
+        </div>
+
+    <div id="controls">
+        <button onclick="addNode('start')">시작 노드 추가</button>
+        <button onclick="addNode('task')">태스크 노드 추가</button>
+        <button onclick="addNode('end')">종료 노드 추가</button>
+    </div>
+
+    <script>
+        const workflowContainer = document.getElementById('workflow-container');
+        let nodes = [];
+        let connectors = [];
+        let selectedNode = null;
+        let startConnectorNode = null;
+
+        function addNode(type) {
+            const newNode = document.createElement('div');
+            newNode.classList.add('node');
+            newNode.classList.add(`${type}-node`);
+            newNode.innerText = `${type.toUpperCase()} 노드`;
+            newNode.style.left = '50px';
+            newNode.style.top = '50px';
+            newNode.dataset.type = type;
+            newNode.dataset.id = Date.now(); // 간단한 고유 ID 생성
+
+            // 노드 이동 기능
+            newNode.addEventListener('mousedown', (e) => {
+                selectedNode = { node: newNode, offsetX: e.clientX - newNode.getBoundingClientRect().left, offsetY: e.clientY - newNode.getBoundingClientRect().top };
+                newNode.style.cursor = 'grabbing';
+            });
+
+            workflowContainer.appendChild(newNode);
+            nodes.push(newNode);
+        }
+
+        workflowContainer.addEventListener('mousemove', (e) => {
+            if (selectedNode) {
+                selectedNode.node.style.left = (e.clientX - workflowContainer.getBoundingClientRect().left - selectedNode.offsetX) + 'px';
+                selectedNode.node.style.top = (e.clientY - workflowContainer.getBoundingClientRect().top - selectedNode.offsetY) + 'px';
+                updateConnectors(); // 노드 이동 시 연결선 업데이트
+            }
+        });
+
+        workflowContainer.addEventListener('mouseup', () => {
+            if (selectedNode) {
+                selectedNode.node.style.cursor = 'grab';
+                selectedNode = null;
+            }
+        });
+
+        // 연결선 시작
+        workflowContainer.addEventListener('mousedown', (e) => {
+            const targetNode = e.target.closest('.node');
+            if (targetNode) {
+                startConnectorNode = targetNode;
+            }
+        });
+
+        // 연결선 그리기 및 종료
+        workflowContainer.addEventListener('mouseup', (e) => {
+            if (startConnectorNode) {
+                const endConnectorNode = e.target.closest('.node');
+                if (endConnectorNode && startConnectorNode !== endConnectorNode) {
+                    createConnector(startConnectorNode, endConnectorNode);
+                }
+                startConnectorNode = null;
+            }
+        });
+
+        function createConnector(node1, node2) {
+            const connector = document.createElement('div');
+            connector.classList.add('connector');
+            workflowContainer.appendChild(connector);
+            connectors.push({ node1, node2, element: connector });
+            updateConnectorPosition(connector, node1, node2);
+        }
+
+        function updateConnectorPosition(connectorElement, node1, node2) {
+            const rect1 = node1.getBoundingClientRect();
+            const rect2 = node2.getBoundingClientRect();
+
+            const x1 = rect1.left + rect1.width / 2 - workflowContainer.getBoundingClientRect().left;
+            const y1 = rect1.top + rect1.height / 2 - workflowContainer.getBoundingClientRect().top;
+            const x2 = rect2.left + rect2.width / 2 - workflowContainer.getBoundingClientRect().left;
+            const y2 = rect2.top + rect2.height / 2 - workflowContainer.getBoundingClientRect().top;
+
+            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+
+            connectorElement.style.width = length + 'px';
+            connectorElement.style.left = x1 + 'px';
+            connectorElement.style.top = y1 + 'px';
+            connectorElement.style.transformOrigin = '0 0';
+            connectorElement.style.transform = `rotate(${angle}rad)`;
+        }
+
+        function updateConnectors() {
+            connectors.forEach(connector => {
+                updateConnectorPosition(connector.element, connector.node1, connector.node2);
+            });
+        }
+    </script>
+</body>
+</html>
