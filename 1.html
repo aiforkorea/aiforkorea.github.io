@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>워크플로 에디터</title>
+    <style>
+        body { font-family: sans-serif; display: flex; }
+        #toolbox {
+            width: 150px;
+            border: 1px solid lightgray;
+            padding: 10px;
+            margin-right: 10px;
+        }
+        .tool {
+            background-color: #f0f0f0;
+            border: 1px solid gray;
+            padding: 5px;
+            margin-bottom: 5px;
+            cursor: grab;
+            text-align: center;
+        }
+        #workflowCanvas {
+            border: 1px solid black;
+            width: 800px;
+            height: 600px;
+            cursor: default;
+            position: relative; /* 자식 요소 absolute positioning 기준 */
+        }
+        #propertiesPanel {
+            width: 200px;
+            border: 1px solid lightgray;
+            padding: 10px;
+            margin-left: 10px;
+        }
+        .connection {
+            background-color: black;
+            position: absolute;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbox">
+        <h3>도구</h3>
+        <div class="tool" draggable="true" data-type="start">시작</div>
+        <div class="tool" draggable="true" data-type="task">태스크</div>
+        <div class="tool" draggable="true" data-type="gateway">게이트웨이</div>
+        <div class="tool" draggable="true" data-type="end">종료</div>
+    </div>
+    <div id="workflowCanvas"></div>
+    <div id="propertiesPanel">
+        <h3>속성</h3>
+        <div id="propertyEditor">선택된 요소 없음</div>
+    </div>
+
+    <script>
+        const toolbox = document.getElementById('toolbox');
+        const workflowCanvas = document.getElementById('workflowCanvas');
+        const propertyEditor = document.getElementById('propertyEditor');
+
+        let currentElement = null;
+        let offsetX, offsetY;
+        let elements = [];
+        let connections = [];
+        let selectedElement = null;
+
+        toolbox.addEventListener('dragstart', (event) => {
+            currentElement = event.target.cloneNode(true);
+            offsetX = event.clientX - event.target.getBoundingClientRect().left;
+            offsetY = event.clientY - event.target.getBoundingClientRect().top;
+        });
+
+        workflowCanvas.addEventListener('dragover', (event) => {
+            event.preventDefault();
+        });
+
+        workflowCanvas.addEventListener('drop', (event) => {
+            if (currentElement) {
+                currentElement.style.position = 'absolute';
+                currentElement.style.left = (event.clientX - workflowCanvas.getBoundingClientRect().left - offsetX) + 'px';
+                currentElement.style.top = (event.clientY - workflowCanvas.getBoundingClientRect().top - offsetY) + 'px';
+                workflowCanvas.appendChild(currentElement);
+
+                const elementType = currentElement.getAttribute('data-type');
+                const elementId = 'element-' + Date.now(); // 간단한 ID 생성
+                currentElement.setAttribute('id', elementId);
+                currentElement.addEventListener('mousedown', selectElement);
+
+                elements.push({
+                    id: elementId,
+                    type: elementType,
+                    x: parseInt(currentElement.style.left),
+                    y: parseInt(currentElement.style.top),
+                    width: currentElement.offsetWidth,
+                    height: currentElement.offsetHeight
+                });
+
+                currentElement = null;
+            }
+        });
+
+        let isDragging = false;
+        let dragOffsetX, dragOffsetY;
+        let draggedElement = null;
+
+        workflowCanvas.addEventListener('mousedown', (event) => {
+            if (event.target !== workflowCanvas) {
+                isDragging = true;
+                draggedElement = event.target;
+                dragOffsetX = event.clientX - draggedElement.getBoundingClientRect().left;
+                dragOffsetY = event.clientY - draggedElement.getBoundingClientRect().top;
+                draggedElement.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (isDragging && draggedElement) {
+                draggedElement.style.left = (event.clientX - workflowCanvas.getBoundingClientRect().left - dragOffsetX) + 'px';
+                draggedElement.style.top = (event.clientY - workflowCanvas.getBoundingClientRect().top - dragOffsetY) + 'px';
+
+                // 이동된 요소의 정보 업데이트
+                const movedElement = elements.find(el => el.id === draggedElement.id);
+                if (movedElement) {
+                    movedElement.x = parseInt(draggedElement.style.left);
+                    movedElement.y = parseInt(draggedElement.style.top);
+                    if (selectedElement && selectedElement.id === movedElement.id) {
+                        showProperties(movedElement); // 속성 패널 업데이트
+                    }
+                    drawConnections(); // 요소 이동 시 연결선 업데이트
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                if (draggedElement) {
+                    draggedElement.style.cursor = 'grab';
+                    draggedElement = null;
+                }
+            }
+        });
+
+        let startConnector = null;
+
+        workflowCanvas.addEventListener('click', (event) => {
+            const clickedElement = elements.find(el => el.id === event.target.id);
+            if (clickedElement) {
+                if (!startConnector) {
+                    startConnector = clickedElement;
+                    event.target.style.border = '2px solid blue'; // 시작 요소 표시
+                } else {
+                    const endConnector = clickedElement;
+                    if (startConnector !== endConnector) {
+                        // 연결선 정보 저장
+                        connections.push({
+                            start: startConnector.id,
+                            end: endConnector.id
+                        });
+                        drawConnections();
+                    }
+                    startConnector.style.border = '1px solid black'; // 시작 요소 표시 제거
+                    startConnector = null;
+                }
+            } else if (startConnector) {
+                startConnector.style.border = '1px solid black'; // 연결 취소
+                startConnector = null;
+            }
+        });
+
+        function drawConnections() {
+            // 기존 연결선 삭제
+            workflowCanvas.querySelectorAll('.connection').forEach(conn => conn.remove());
+
+            connections.forEach(conn => {
+                const startElement = elements.find(el => el.id === conn.start);
+                const endElement = elements.find(el => el.id === conn.end);
+
+                if (startElement && endElement) {
+                    const startX = startElement.x + startElement.width / 2;
+                    const startY = startElement.y + startElement.height / 2;
+                    const endX = endElement.x + endElement.width / 2;
+                    const endY = endElement.y + endElement.height / 2;
+
+                    const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                    const angle = Math.atan2(endY - startY, endX - startX);
+
+                    const line = document.createElement('div');
+                    line.classList.add('connection');
+                    line.style.width = distance + 'px';
+                    line.style.height = '2px';
+                    line.style.transformOrigin = '0 0';
+                    line.style.transform = `translate(${startX}px, ${startY}px) rotate(${angle}rad)`;
+
+                    workflowCanvas.appendChild(line);
+                }
+            });
+        }
+
+        function selectElement(event) {
+            selectedElement = elements.find(el => el.id === event.target.id);
+            if (selectedElement) {
+                showProperties(selectedElement);
+            } else {
+                propertyEditor.innerHTML = '선택된 요소 없음';
+            }
+        }
+
+        function showProperties(element) {
+            propertyEditor.innerHTML = `<h3>${element.type} 속성</h3>`;
+            propertyEditor.innerHTML += `<p>ID: ${element.id}</p>`;
+            propertyEditor.innerHTML += `<p>타입: ${element.type}</p>`;
+            propertyEditor.innerHTML += `<p>X: ${element.x}, Y: ${element.y}</p>`;
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Delete' && selectedElement) {
+                const index = elements.findIndex(el => el.id === selectedElement.id);
+                if (index > -1) {
+                    const elementToRemove = document.getElementById(selectedElement.id);
+                    elementToRemove.remove();
+                    elements.splice(index, 1);
+                    selectedElement = null;
+                    propertyEditor.innerHTML = '선택된 요소 없음';
+
+                    // 연결된 선도 삭제
+                    connections = connections.filter(conn => conn.start !== elementToRemove.id && conn.end !== elementToRemove.id);
+                    drawConnections();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
