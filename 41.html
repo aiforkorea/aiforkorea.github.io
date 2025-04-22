@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Business Process Modeling Workflow</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      background: #f6f6f6;
+    }
+    #container {
+      display: flex;
+      height: 100vh;
+    }
+    #sidebar {
+      width: 180px;
+      background: #374151;
+      padding: 18px 12px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 2;
+      user-select: none;
+    }
+    .node-btn {
+      padding: 16px 10px;
+      background: #fff;
+      border: none;
+      border-radius: 8px;
+      color: #374151;
+      font-size: 16px;
+      cursor: grab;
+      outline: none;
+      margin-bottom: 8px;
+      transition: background 0.2s;
+      box-shadow: 0 1px 5px #0001;
+    }
+    .node-btn:active {
+      background: #e5e5e5;
+    }
+    #canvas-area {
+      flex: 1;
+      position: relative;
+      background: #fff;
+      overflow: hidden;
+    }
+    #canvas-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; /* lines are not draggable */
+    }
+    .canvas-node {
+      position: absolute;
+      width: 104px;
+      height: 38px;
+      border-radius: 9px;
+      background: #f1f5f9;
+      border: 2px solid #94a3b8;
+      color: #2d3346;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: move;
+      box-shadow: 0 1px 8px #0002;
+      /* Prevent child text selection on drag */
+      user-select: none;
+      transition: border 0.15s;
+      z-index: 2;
+    }
+    .canvas-node.selected {
+      border: 2px solid #2563eb;
+      background: #dbeafe;
+    }
+    /* Hint message */
+    #hint {
+      position: absolute;
+      left: 50%;
+      top: 10px;
+      transform: translateX(-50%);
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 5px 15px;
+      border-radius: 8px;
+      font-size: 15px;
+      z-index: 10;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #hint.active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+<div id="container">
+  <div id="sidebar">
+    <h3 style="margin:0 0 18px 0;">Nodes</h3>
+    <button class="node-btn" draggable="true" data-label="Task">Task</button>
+    <button class="node-btn" draggable="true" data-label="Decision">Decision</button>
+    <button class="node-btn" draggable="true" data-label="Start">Start</button>
+    <button class="node-btn" draggable="true" data-label="End">End</button>
+    <!-- Add more as needed -->
+  </div>
+  <div id="canvas-area">
+    <svg id="canvas-svg"></svg>
+    <div id="hint">Click another node to connect</div>
+    <!-- Nodes will be added here -->
+  </div>
+</div>
+
+<script>
+  // --- Setup ---
+  const canvasArea = document.getElementById('canvas-area');
+  const svg = document.getElementById('canvas-svg');
+  const NODE_WIDTH = 104, NODE_HEIGHT = 38;
+  let nodeCounter = 1;
+  let draggingNode = null;
+  let offsetX, offsetY;
+  let nodes = [];
+  let connections = [];
+  let connectMode = false;
+  let connectStartNode = null;
+  let tempLine = null;
+  const HINT = document.getElementById('hint');
+
+  // --- Sidebar (drag source) ---
+  document.querySelectorAll('.node-btn').forEach(btn => {
+    btn.addEventListener('dragstart', e => {
+      e.dataTransfer.setData("text/plain", btn.getAttribute("data-label"));
+    });
+  });
+
+  // --- Canvas (drop target) ---
+  canvasArea.addEventListener('dragover', e => {
+    e.preventDefault();
+  });
+  canvasArea.addEventListener('drop', e => {
+    e.preventDefault();
+    // Get label
+    let label = e.dataTransfer.getData("text/plain");
+    // Position relative to canvas
+    let rect = canvasArea.getBoundingClientRect();
+    let x = e.clientX - rect.left - NODE_WIDTH / 2;
+    let y = e.clientY - rect.top - NODE_HEIGHT / 2;
+    createNode(label, x, y);
+  });
+
+  function createNode(label, x, y) {
+    let div = document.createElement('div');
+    div.className = 'canvas-node';
+    div.style.left = x+'px';
+    div.style.top = y+'px';
+    div.textContent = label;
+    div.setAttribute('data-id', nodeCounter);
+
+    // Node click (for connection)
+    div.addEventListener('mousedown', nodeMouseDownEvent);
+
+    // Node double click (for connection tool)
+    div.addEventListener('click', nodeClickEvent);
+
+    // Add to canvas
+    canvasArea.appendChild(div);
+
+    // Store info
+    let nodeObj = {
+      id: nodeCounter,
+      label,
+      el: div,
+      x, y
+    };
+    nodes.push(nodeObj);
+    nodeCounter++;
+    return nodeObj;
+  }
+
+  // --- Node Drag (move on canvas) ---
+  let movingNode = null;
+  let movingOffset = {x:0, y:0};
+
+  function nodeMouseDownEvent(e) {
+    if (connectMode) return; // Block move while connecting
+    movingNode = nodes.find(n=>n.el===this);
+    movingOffset.x = e.offsetX;
+    movingOffset.y = e.offsetY;
+    document.addEventListener('mousemove', nodeMoveMouseMove);
+    document.addEventListener('mouseup', nodeMoveMouseUp);
+    // Bring to front
+    this.style.zIndex = 5;
+  }
+  function nodeMoveMouseMove(e) {
+    if (!movingNode) return;
+    let rect = canvasArea.getBoundingClientRect();
+    let x = Math.max(0, Math.min(canvasArea.clientWidth-NODE_WIDTH, e.clientX-rect.left-movingOffset.x));
+    let y = Math.max(0, Math.min(canvasArea.clientHeight-NODE_HEIGHT, e.clientY-rect.top-movingOffset.y));
+    movingNode.x = x;
+    movingNode.y = y;
+    movingNode.el.style.left = x+'px';
+    movingNode.el.style.top = y+'px';
+    updateLines();
+  }
+  function nodeMoveMouseUp(e) {
+    if (movingNode) movingNode.el.style.zIndex = 2;
+    movingNode = null;
+    document.removeEventListener('mousemove', nodeMoveMouseMove);
+    document.removeEventListener('mouseup', nodeMoveMouseUp);
+  }
+
+  // --- Node Connection (click to connect) ---
+  function nodeClickEvent(e) {
+    e.stopPropagation();
+    let nodeDiv = this;
+    if (!connectMode) {
+      // Select this as start node
+      connectStartNode = nodes.find(n=>n.el===nodeDiv);
+      connectMode = true;
+      nodeDiv.classList.add('selected');
+      showHint(true);
+      svg.style.pointerEvents = "none"; // Prevent accidental svg clicks
+      // Prepare tempLine following mouse
+      svg.addEventListener('mousemove', moveTempLine);
+      if (!tempLine) {
+        tempLine = document.createElementNS("http://www.w3.org/2000/svg","line");
+        tempLine.setAttribute('stroke', "#2563eb");
+        tempLine.setAttribute('stroke-dasharray', "4");
+        tempLine.setAttribute('stroke-width', "2.5");
+        tempLine.setAttribute('pointer-events', 'none');
+        svg.appendChild(tempLine);
+      }
+      // Update tempLine position
+      let startPos = getNodeCenter(connectStartNode);
+      tempLine.setAttribute('x1', startPos.x);
+      tempLine.setAttribute('y1', startPos.y);
+      tempLine.setAttribute('x2', startPos.x);
+      tempLine.setAttribute('y2', startPos.y);
+      canvasArea.addEventListener('mousemove', moveTempLine);
+    } else {
+      // Select this as end node/destination
+      let connectEndNode = nodes.find(n=>n.el===nodeDiv);
+      if (connectEndNode && connectEndNode!==connectStartNode) {
+        // Create connection
+        connections.push({from: connectStartNode, to: connectEndNode});
+        redrawLines();
+      }
+      cleanupConnectMode();
+    }
+  }
+  // Cancel connection if clicking on canvas (not a node)
+  canvasArea.addEventListener('click', e=>{
+    if (connectMode) cleanupConnectMode();
+  });
+
+  function showHint(show) {
+    if (show) HINT.classList.add('active');
+    else HINT.classList.remove('active');
+  }
+
+  function getNodeCenter(node) {
+    return {
+      x: node.x + NODE_WIDTH / 2,
+      y: node.y + NODE_HEIGHT / 2
+    }
+  }
+
+  function moveTempLine(e) {
+    if (!connectStartNode || !tempLine) return;
+    let rect = canvasArea.getBoundingClientRect();
+    let startPos = getNodeCenter(connectStartNode);
+    tempLine.setAttribute('x1', startPos.x);
+    tempLine.setAttribute('y1', startPos.y);
+    // End at mouse cursor
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    tempLine.setAttribute('x2', mx);
+    tempLine.setAttribute('y2', my);
+  }
+
+  function cleanupConnectMode() {
+    if (connectStartNode) connectStartNode.el.classList.remove('selected');
+    connectStartNode = null;
+    connectMode = false;
+    showHint(false);
+    // Remove temp line
+    if (tempLine) {
+      svg.removeChild(tempLine);
+      tempLine = null;
+    }
+    canvasArea.removeEventListener('mousemove', moveTempLine);
+  }
+
+  // --- Lines & Connections ---
+  function redrawLines() {
+    // Clear all lines except tempLine
+    let lines = Array.from(svg.querySelectorAll('line')).filter(l=>l!==tempLine);
+    for (let l of lines) svg.removeChild(l);
+    // Draw
+    for (let conn of connections) {
+      let {from, to} = conn;
+      let line = document.createElementNS("http://www.w3.org/2000/svg","line");
+      let start = getIntersectPoint(from, to);
+      let end = getIntersectPoint(to, from);
+      line.setAttribute("x1", start.x);
+      line.setAttribute("y1", start.y);
+      line.setAttribute("x2", end.x);
+      line.setAttribute("y2", end.y);
+      line.setAttribute('stroke', "#ef4444");
+      line.setAttribute('stroke-width', "3");
+      line.setAttribute('marker-end', 'url(#arrow)');
+      svg.appendChild(line);
+    }
+    // Add marker arrow only once!
+    addSvgArrowMarker();
+  }
+  function updateLines() {
+    redrawLines();
+  }
+  // Helper: get intersection point from box center toward another node
+  function getIntersectPoint(from, to) {
+    let x1 = from.x + NODE_WIDTH/2, y1 = from.y + NODE_HEIGHT/2;
+    let x2 = to.x + NODE_WIDTH/2,   y2 = to.y + NODE_HEIGHT/2;
+    // Box size
+    let dx = x2 - x1, dy = y2 - y1;
+    let angle = Math.atan2(dy, dx);
+    let ex = x1 + Math.cos(angle) * (NODE_WIDTH/2-5);
+    let ey = y1 + Math.sin(angle) * (NODE_HEIGHT/2-5);
+    return {x: ex, y: ey};
+  }
+  // Add only once
+  function addSvgArrowMarker() {
+    if (svg.querySelector('marker')) return;
+    let defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    let marker = document.createElementNS("http://www.w3.org/2000/svg","marker");
+    marker.setAttribute('id','arrow');
+    marker.setAttribute('markerWidth','13');
+    marker.setAttribute('markerHeight','13');
+    marker.setAttribute('refX','9');
+    marker.setAttribute('refY','6.5');
+    marker.setAttribute('orient','auto');
+    marker.setAttribute('markerUnits','strokeWidth');
+    let arrow = document.createElementNS("http://www.w3.org/2000/svg","path");
+    arrow.setAttribute('d','M2,2 L10,6.5 L2,11');
+    arrow.setAttribute('stroke','#ef4444');
+    arrow.setAttribute('stroke-width','2');
+    arrow.setAttribute('fill','none');
+    marker.appendChild(arrow);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+  }
+
+  // --- Basic starting examples so you can try immediately ---
+  createNode("Start", 80, 80);
+  createNode("Task", 280, 75);
+  createNode("Decision", 180, 230);
+  createNode("End", 330, 280);
+
+  // --- Make canvas always fit SVG ---
+  function fitSvgSize() {
+    svg.setAttribute('width', canvasArea.clientWidth);
+    svg.setAttribute('height', canvasArea.clientHeight);
+  }
+  window.addEventListener('resize', fitSvgSize);
+  fitSvgSize();
+
+</script>
+</body>
+</html>
