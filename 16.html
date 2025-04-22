@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>비즈니스 프로세스 모델링</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            display: flex;
+        }
+
+        .container {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 200px;
+            background-color: #f0f0f0;
+            padding: 20px;
+            border-right: 1px solid #ccc;
+        }
+
+        .sidebar h2 {
+            margin-top: 0;
+        }
+
+        .node-button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            cursor: grab;
+        }
+
+        .canvas-container {
+            flex-grow: 1;
+            padding: 20px;
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+            background-color: #eee;
+            border: 1px solid #ccc;
+            position: relative; /* 노드들을 절대 위치시키기 위해 필요 */
+            cursor: default; /* 캔버스 기본 커서 */
+        }
+
+        .node {
+            position: absolute;
+            border: 1px solid #333;
+            background-color: #fff;
+            padding: 10px;
+            cursor: grab; /* 노드 이동 커서 */
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .connector {
+            position: absolute;
+            border: 1px solid blue; /* 연결선 스타일 */
+            background-color: transparent;
+            pointer-events: none; /* 연결선이 마우스 이벤트를 가로채지 않도록 */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>노드 팔레트</h2>
+            <button class="node-button" draggable="true" data-node-type="task">태스크</button>
+            <button class="node-button" draggable="true" data-node-type="decision">결정</button>
+            <button class="node-button" draggable="true" data-node-type="start">시작</button>
+            <button class="node-button" draggable="true" data-node-type="end">종료</button>
+        </div>
+        <div class="canvas-container">
+            <h2>캔버스</h2>
+            <div id="canvas"></div>
+        </div>
+    </div>
+
+    <script>
+        const nodeButtons = document.querySelectorAll('.node-button');
+        const canvas = document.getElementById('canvas');
+        let draggedNodeData = null;
+        let nodes = [];
+        let connections = [];
+        let startNode = null;
+        let currentlyDraggingNode = null;
+        let dragOffsetX, dragOffsetY;
+        let isConnecting = false; // 현재 연결 작업을 수행 중인지 여부
+
+        nodeButtons.forEach(button => {
+            button.addEventListener('dragstart', (event) => {
+                draggedNodeData = {
+                    type: event.target.dataset.nodeType,
+                    offsetX: event.offsetX,
+                    offsetY: event.offsetY
+                };
+            });
+        });
+
+        canvas.addEventListener('dragover', (event) => {
+            event.preventDefault(); // drop 활성화
+        });
+
+        canvas.addEventListener('drop', (event) => {
+            if (draggedNodeData) {
+                const newNode = document.createElement('div');
+                newNode.classList.add('node');
+                newNode.dataset.nodeType = draggedNodeData.type;
+                newNode.textContent = draggedNodeData.type;
+                newNode.style.left = `${event.clientX - canvas.getBoundingClientRect().left - draggedNodeData.offsetX}px`;
+                newNode.style.top = `${event.clientY - canvas.getBoundingClientRect().top - draggedNodeData.offsetY}px`;
+
+                // 노드 클릭 시 연결 시작 준비
+                newNode.addEventListener('mousedown', (e) => {
+                    if (!currentlyDraggingNode) {
+                        startConnection(e);
+                    }
+                });
+
+                // 노드 드래그 이동 시작
+                newNode.addEventListener('mousedown', (e) => {
+                    if (!isConnecting) {
+                        currentlyDraggingNode = e.target;
+                        dragOffsetX = e.clientX - currentlyDraggingNode.getBoundingClientRect().left;
+                        dragOffsetY = e.clientY - currentlyDraggingNode.getBoundingClientRect().top;
+                        canvas.addEventListener('mousemove', dragNode);
+                        canvas.addEventListener('mouseup', stopDrag);
+                    }
+                });
+
+                canvas.appendChild(newNode);
+                nodes.push(newNode);
+                draggedNodeData = null;
+            }
+        });
+
+        function dragNode(event) {
+            if (currentlyDraggingNode) {
+                currentlyDraggingNode.style.left = `${event.clientX - canvas.getBoundingClientRect().left - dragOffsetX}px`;
+                currentlyDraggingNode.style.top = `${event.clientY - canvas.getBoundingClientRect().top - dragOffsetY}px`;
+                updateConnections();
+            }
+        }
+
+        function stopDrag() {
+            canvas.removeEventListener('mousemove', dragNode);
+            canvas.removeEventListener('mouseup', stopDrag);
+            currentlyDraggingNode = null;
+        }
+
+        function startConnection(event) {
+            if (currentlyDraggingNode) return; // 이동 중에는 연결 시작 안 함
+            isConnecting = true;
+            startNode = event.target;
+            canvas.addEventListener('mousemove', drawConnection);
+            canvas.addEventListener('mouseup', endConnection);
+        }
+
+        function drawConnection(event) {
+            if (!startNode) return;
+            const tempConnectorId = 'temp-connector';
+            let tempConnector = document.getElementById(tempConnectorId);
+            if (!tempConnector) {
+                tempConnector = document.createElement('div');
+                tempConnector.id = tempConnectorId;
+                tempConnector.classList.add('connector');
+                canvas.appendChild(tempConnector);
+            }
+
+            const startRect = startNode.getBoundingClientRect();
+            const startX = startRect.left + startRect.width / 2 - canvas.getBoundingClientRect().left;
+            const startY = startRect.top + startRect.height / 2 - canvas.getBoundingClientRect().top;
+            const endX = event.clientX - canvas.getBoundingClientRect().left;
+            const endY = event.clientY - canvas.getBoundingClientRect().top;
+
+            positionConnector(tempConnector, startX, startY, endX, endY);
+        }
+
+        function endConnection(event) {
+            canvas.removeEventListener('mousemove', drawConnection);
+            canvas.removeEventListener('mouseup', endConnection);
+            isConnecting = false;
+
+            const endNode = event.target.closest('.node');
+            if (startNode && endNode && startNode !== endNode) {
+                connections.push({ start: startNode, end: endNode });
+                updateConnections();
+            }
+
+            const tempConnector = document.getElementById('temp-connector');
+            if (tempConnector) {
+                tempConnector.remove();
+            }
+            startNode = null;
+        }
+
+        function updateConnections() {
+            document.querySelectorAll('.connector:not(#temp-connector)').forEach(connector => connector.remove());
+
+            connections.forEach(conn => {
+                const startRect = conn.start.getBoundingClientRect();
+                const endRect = conn.end.getBoundingClientRect();
+
+                const startX = startRect.left + startRect.width / 2 - canvas.getBoundingClientRect().left;
+                const startY = startRect.top + startRect.height / 2 - canvas.getBoundingClientRect().top;
+                const endX = endRect.left + endRect.width / 2 - canvas.getBoundingClientRect().left;
+                const endY = endRect.top + endRect.height / 2 - canvas.getBoundingClientRect().top;
+
+                const connector = document.createElement('div');
+                connector.classList.add('connector');
+                positionConnector(connector, startX, startY, endX, endY);
+                canvas.appendChild(connector);
+            });
+        }
+
+        function positionConnector(connector, startX, startY, endX, endY) {
+            const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+            const angle = Math.atan2(endY - startY, endX - startX);
+
+            connector.style.width = `${distance}px`;
+            connector.style.left = `${startX}px`;
+            connector.style.top = `${startY - 2}px`;
+            connector.style.transformOrigin = '0 0';
+            connector.style.transform = `rotate(${angle}rad)`;
+        }
+    </script>
+</body>
+</html>
