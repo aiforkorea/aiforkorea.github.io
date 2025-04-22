@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>워크플로 에디터</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            margin: 20px;
+        }
+
+        .palette {
+            width: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-right: 20px;
+        }
+
+        .palette h2 {
+            margin-top: 0;
+        }
+
+        .element {
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 8px;
+            margin-bottom: 5px;
+            cursor: grab; /* 잡기 쉬운 커서 모양 */
+        }
+
+        .canvas {
+            flex-grow: 1;
+            border: 1px dashed #aaa;
+            min-height: 400px;
+            padding: 10px;
+            position: relative; /* 드롭될 요소의 위치 기준점 */
+        }
+
+        .canvas h2 {
+            margin-top: 0;
+        }
+
+        .workflow-item {
+            position: absolute; /* 캔버스 내에서 자유로운 배치 */
+            border: 1px solid #555;
+            padding: 10px;
+            cursor: move; /* 이동 가능한 커서 모양 */
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .workflow-item.start {
+            background-color: #ccffcc;
+        }
+
+        .workflow-item.process {
+            background-color: #e0f7fa;
+        }
+
+        .workflow-item.decision {
+            background-color: #ffe0b2;
+        }
+
+        .workflow-item.end {
+            background-color: #ffdddd;
+        }
+
+        #connectionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* SVG가 마우스 이벤트를 가로채지 않도록 */
+        }
+    </style>
+</head>
+<body>
+    <div class="palette">
+        <h2>요소 팔레트</h2>
+        <div class="element" draggable="true" data-type="start">시작</div>
+        <div class="element" draggable="true" data-type="process">프로세스</div>
+        <div class="element" draggable="true" data-type="decision">결정</div>
+        <div class="element" draggable="true" data-type="end">종료</div>
+    </div>
+    <div class="canvas"
