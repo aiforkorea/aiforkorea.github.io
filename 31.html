@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>비즈니스 프로세스 모델링</title>
+<style>
+body {
+    font-family: sans-serif;
+    display: flex;
+    margin: 0;
+    overflow: hidden;
+}
+
+#sidebar {
+    width: 150px;
+    background-color: #f0f0f0;
+    padding: 10px;
+    border-right: 1px solid #ccc;
+}
+
+.node-button {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: 5px;
+    background-color: #ddd;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    text-align: center;
+    cursor: grab;
+}
+
+#canvas-container {
+    flex-grow: 1;
+    position: relative;
+    overflow: auto;
+    background-color: #fff;
+}
+
+#workflow-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2000px; /* 넓게 잡아둠 */
+    height: 1500px; /* 넓게 잡아둠 */
+}
+
+.node {
+    position: absolute;
+    border: 1px solid #333;
+    background-color: #eee;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: grab;
+    user-select: none;
+}
+
+.connection {
+    position: absolute;
+    fill: none;
+    stroke: black;
+    stroke-width: 2;
+}
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+    <button class="node-button" draggable="true" data-node-type="start">시작</button>
+    <button class="node-button" draggable="true" data-node-type="task">작업</button>
+    <button class="node-button" draggable="true" data-node-type="gateway">게이트웨이</button>
+    <button class="node-button" draggable="true" data-node-type="end">종료</button>
+</div>
+
+<div id="canvas-container">
+    <svg id="workflow-canvas"></svg>
+</div>
+
+<script>
+const sidebar = document.getElementById('sidebar');
+const canvasContainer = document.getElementById('canvas-container');
+const workflowCanvas = document.getElementById('workflow-canvas');
+const nodes = [];
+let activeDrag = null;
+let offsetX, offsetY;
+let startNode = null;
+let connections = [];
+
+// 드래그 시작 이벤트 (사이드바 -> 캔버스)
+sidebar.addEventListener('dragstart', (event) => {
+    activeDrag = {
+        type: 'create',
+        nodeType: event.target.dataset.nodeType,
+        startX: event.clientX,
+        startY: event.clientY
+    };
+});
+
+// 캔버스 위에서 드래그 오버 이벤트 (드롭 허용)
+canvasContainer.addEventListener('dragover', (event) => {
+    event.preventDefault();
+});
+
+// 캔버스에 드롭 이벤트 (노드 생성)
+canvasContainer.addEventListener('drop', (event) => {
+    if (activeDrag && activeDrag.type === 'create') {
+        const newNode = createNode(activeDrag.nodeType, event.clientX - canvasContainer.getBoundingClientRect().left, event.clientY - canvasContainer.getBoundingClientRect().top);
+        nodes.push(newNode);
+        activeDrag = null;
+    }
+});
+
+// 노드 드래그 시작 이벤트 (캔버스 내부 이동)
+canvasContainer.addEventListener('mousedown', (event) => {
+    if (event.target.classList.contains('node')) {
+        activeDrag = {
+            type: 'move',
+            node: event.target,
+            startX: event.clientX,
+            startY: event.clientY,
+            initialX: parseFloat(event.target.style.left) || 0,
+            initialY: parseFloat(event.target.style.top) || 0
+        };
+        offsetX = event.clientX - activeDrag.node.getBoundingClientRect().left;
+        offsetY = event.clientY - activeDrag.node.getBoundingClientRect().top;
+        activeDrag.node.style.cursor = 'grabbing';
+    } else if (event.target === workflowCanvas) {
+        // 연결선 시작 노드 선택
+        startNode = {
+            x: event.clientX - canvasContainer.getBoundingClientRect().left,
+            y: event.clientY - canvasContainer.getBoundingClientRect().top
+        };
+    }
+});
+
+// 마우스 이동 이벤트 (노드 이동 또는 연결선 그리기)
+canvasContainer.addEventListener('mousemove', (event) => {
+    if (activeDrag && activeDrag.type === 'move') {
+        const newX = event.clientX - offsetX;
+        const newY = event.clientY - offsetY;
+        activeDrag.node.style.left = `${newX}px`;
+        activeDrag.node.style.top = `${newY}px`;
+        updateConnections();
+    } else if (startNode) {
+        // 임시 연결선 그리기
+        const endPoint = {
+            x: event.clientX - canvasContainer.getBoundingClientRect().left,
+            y: event.clientY - canvasContainer.getBoundingClientRect().top
+        };
+        drawTemporaryConnection(startNode, endPoint);
+    }
+});
+
+// 마우스 업 이벤트 (드래그 종료 또는 연결선 완료)
+canvasContainer.addEventListener('mouseup', (event) => {
+    if (activeDrag && activeDrag.type === 'move') {
+        activeDrag.node.style.cursor = 'grab';
+        activeDrag = null;
+    } else if (startNode) {
+        const targetNode = event.target.closest('.node');
+        if (targetNode && targetNode !== startNode.element) {
+            const endPoint = {
+                x: event.clientX - canvasContainer.getBoundingClientRect().left,
+                y: event.clientY - canvasContainer.getBoundingClientRect().top,
+                element: targetNode
+            };
+            createConnection(startNode, endPoint);
+        }
+        clearTemporaryConnection();
+        startNode = null;
+    }
+});
+
+function createNode(type, x, y) {
+    const newNode = document.createElement('div');
+    newNode.classList.add('node');
+    newNode.textContent = type;
+    newNode.style.left = `${x}px`;
+    newNode.style.top = `${y}px`;
+    newNode.dataset.nodeType = type;
+    canvasContainer.appendChild(newNode);
+    return newNode;
+}
+
+function getConnectorPosition(node, xOffset = 0.5, yOffset = 0.5) {
+    const rect = node.getBoundingClientRect();
+    const canvasRect = canvasContainer.getBoundingClientRect();
+    return {
+        x: rect.left + rect.width * xOffset - canvasRect.left,
+        y: rect.top + rect.height * yOffset - canvasRect.top
+    };
+}
+
+function createConnection(start, end) {
+    const startPos = getConnectorPosition(start.element);
+    const endPos = getConnectorPosition(end.element);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.classList.add('connection');
+    path.setAttribute('d', `M${startPos.x},${startPos.y} L${endPos.x},${endPos.y}`);
+    workflowCanvas.appendChild(path);
+
+    connections.push({ startNode: start.element, endNode: end.element, svgPath: path });
+}
+
+function updateConnections() {
+    connections.forEach(conn => {
+        const startPos = getConnectorPosition(conn.startNode);
+        const endPos = getConnectorPosition(conn.endNode);
+        conn.svgPath.setAttribute('d', `M${startPos.x},${startPos.y} L${endPos.x},${endPos.y}`);
+    });
+}
+
+let tempConnectionLine = null;
+function drawTemporaryConnection(start, end) {
+    if (!tempConnectionLine) {
+        tempConnectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        tempConnectionLine.classList.add('connection');
+        workflowCanvas.appendChild(tempConnectionLine);
+    }
+    tempConnectionLine.setAttribute('d', `M${start.x},${start.y} L${end.x},${end.y}`);
+}
+
+function clearTemporaryConnection() {
+    if (tempConnectionLine) {
+        tempConnectionLine.remove();
+        tempConnectionLine = null;
+    }
+}
+</script>
+
+</body>
+</html>
