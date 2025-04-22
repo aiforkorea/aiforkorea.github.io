@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Business Processing Modeling Workflow</title>
+ <style>
+ /* 노드 스타일 */
+ .node {
+ width: 100px;
+ height: 30px;
+ border: 1px solid #ccc;
+ border-radius: 5px;
+ background-color: #f0f0f0;
+ padding: 5px;
+ text-align: center;
+ cursor: move;
+ }
+
+ /* 캔버스 스타일 */
+ #canvas {
+ width: 800px;
+ height: 600px;
+ border: 1px solid #ccc;
+ }
+
+ /* 노드 연결선 스타일 */
+ .connection {
+ stroke: #ccc;
+ stroke-width: 2;
+ }
+
+ /* 노드 버튼 스타일 */
+ .node-button {
+ width: 100px;
+ height: 30px;
+ border: 1px solid #ccc;
+ border-radius: 5px;
+ background-color: #f0f0f0;
+ padding: 5px;
+ text-align: center;
+ cursor: pointer;
+ }
+ </style>
+</head>
+<body>
+ <!-- 노드 버튼 목록 -->
+ <div id="node-list">
+ <button class="node-button" draggable="true">시작</button>
+ <button class="node-button" draggable="true">프로세스</button>
+ <button class="node-button" draggable="true">결정</button>
+ <button class="node-button" draggable="true">종료</button>
+ </div>
+
+ <!-- 캔버스 -->
+ <svg id="canvas"></svg>
+
+ <script>
+ // 노드 버튼 목록 가져오기
+ const nodeList = document.getElementById('node-list');
+ const nodeButtons = nodeList.children;
+
+ // 캔버스 가져오기
+ const canvas = document.getElementById('canvas');
+
+ // 노드 목록
+ let nodes = [];
+
+ // 연결선 목록
+ let connections = [];
+
+ // 드래그 중인 노드
+ let draggingNode = null;
+
+ // 노드 버튼 이벤트 추가
+ for (const nodeButton of nodeButtons) {
+ nodeButton.addEventListener('dragstart', (e) => {
+ // 드래그 중인 노드 설정
+ draggingNode = {
+ type: nodeButton.textContent,
+ x: e.clientX,
+ y: e.clientY
+ };
+ });
+ }
+
+ // 캔버스 이벤트 추가
+ canvas.addEventListener('dragover', (e) => {
+ e.preventDefault();
+ });
+
+ canvas.addEventListener('drop', (e) => {
+ e.preventDefault();
+
+ // 노드 생성
+ if (draggingNode) {
+ const node = {
+ type: draggingNode.type,
+ x: e.clientX,
+ y: e.clientY
+ };
+
+ // 노드 추가
+ nodes.push(node);
+
+ // 노드 렌더링
+ renderNode(node);
+
+ // 드래그 중인 노드 초기화
+ draggingNode = null;
+ }
+ });
+
+ // 노드 렌더링 함수
+ function renderNode(node) {
+ // 노드 엘리먼트 생성
+ const nodeElement = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+ nodeElement.setAttribute('x', node.x);
+ nodeElement.setAttribute('y', node.y);
+ nodeElement.setAttribute('width', 100);
+ nodeElement.setAttribute('height', 30);
+ nodeElement.setAttribute('fill', '#f0f0f0');
+ nodeElement.setAttribute('stroke', '#ccc');
+
+ // 노드 텍스트 엘리먼트 생성
+ const nodeTextElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+ nodeTextElement.setAttribute('x', node.x + 50);
+ nodeTextElement.setAttribute('y', node.y + 20);
+ nodeTextElement.textContent = node.type;
+
+ // 노드 엘리먼트 추가
+ canvas.appendChild(nodeElement);
+ canvas.appendChild(nodeTextElement);
+
+ // 노드 이벤트 추가
+ nodeElement.addEventListener('mousedown', (e) => {
+ // 노드 이동 시작
+ moveNode(node, e.clientX, e.clientY);
+ });
+
+ nodeElement.addEventListener('mouseup', () => {
+ // 노드 이동 종료
+ moveNode(node, null, null);
+ });
+ }
+
+ // 노드 이동 함수
+ function moveNode(node, x, y) {
+ if (x && y) {
+ // 노드 위치 업데이트
+ node.x = x;
+ node.y = y;
+
+ // 노드 엘리먼트 업데이트
+ const nodeElement = canvas.querySelector(`rect[x="${node.x}"][y="${node.y}"]`);
+ nodeElement.setAttribute('x', node.x);
+ nodeElement.setAttribute('y', node.y);
+
+ const nodeTextElement = canvas.querySelector(`text[x="${node.x + 50}"][y="${node.y + 20}"]`);
+ nodeTextElement.setAttribute('x', node.x + 50);
+ nodeTextElement.setAttribute('y', node.y + 20);
+ }
+ }
+
+ // 연결선 렌더링 함수
+ function renderConnection(connection) {
+ // 연결선 엘리먼트 생성
+ const connectionElement = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+ connectionElement.setAttribute('x1', connection.from.x + 50);
+ connectionElement.setAttribute('y1', connection.from.y + 15);
+ connectionElement.setAttribute('x2', connection.to.x + 50);
+ connectionElement.setAttribute('y2', connection.to.y + 15);
+ connectionElement.setAttribute('stroke', '#ccc');
+ connectionElement.setAttribute('stroke-width', 2);
+
+ // 연결선 엘리먼트 추가
+ canvas.appendChild(connectionElement);
+ }
+
+ // 캔버스 클릭 이벤트 추가
+ canvas.addEventListener('click', (e) => {
+ // 클릭한 노드 찾기
+ const clickedNode = nodes.find((node) => {
+ const distance = Math.sqrt(Math.pow(node.x + 50 - e.clientX, 2) + Math.pow(node.y + 15 - e.clientY, 2));
+ return distance < 50;
+ });
+
+ if (clickedNode) {
+ // 연결선 생성
+ if (connections.length === 0 || connections[connections.length - 1].to !== clickedNode) {
+ connections.push({
+ from: clickedNode,
+ to: null
+ });
+ } else {
+ // 연결선 업데이트
+ connections[connections.length - 1].to = clickedNode;
+
+ // 연결선 렌더링
+ renderConnection(connections[connections.length - 1]);
+ }
+ }
+ });
+ </script>
+</body>
+</html>
