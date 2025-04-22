@@ -1,0 +1,278 @@
+html, css, javascript를 이용해서 business processing modeling workflow를 만들거야. 그런데, 왼쪽에는 드래그 & 드롭이 가능한 버튼 형식의 노드가 있어야 하고 파워포인트와 유사하게 노드와 노드를 연결하는 연결선이 있어야 해. 오른쪽에는 캔버스가 있어야 하지. 코드를 생성해 줄래?
+
+ HTML 파일 하나에 <style>과 <script>를 이용해서 하나의 파일로 만들워줘
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Business Workflow Modeling</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      font-family: sans-serif;
+      background: #f7f7fb;
+      display: flex;
+    }
+    #sidebar {
+      width: 180px;
+      background: #26324a;
+      color: #fff;
+      padding: 18px 0;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-width: 140px;
+      border-right: 2px solid #dde;
+    }
+    .node-btn {
+      width: 120px;
+      padding: 14px 0;
+      border: none;
+      outline: none;
+      background: #fff;
+      color: #26324a;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      cursor: grab;
+      transition: background 0.15s;
+      user-select: none;
+    }
+    .node-btn:active {
+      background: #dde;
+    }
+    #canvas-area {
+      flex: 1;
+      position: relative;
+      overflow: auto;
+      background: linear-gradient(45deg, #f1f4fa 93%, #deecfb 100%);
+      min-height: 100vh;
+      min-width: 600px;
+    }
+
+    .node {
+      position: absolute;
+      min-width: 88px;
+      min-height: 38px;
+      padding: 10px 18px;
+      background: #fff;
+      border: 2px solid #497CCA;
+      border-radius: 12px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      font-size: 1rem;
+      color: #26324a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: move;
+      z-index: 10;
+      transition: box-shadow 0.15s;
+      user-select: none;
+    }
+    .node.selected {
+      border-color: #ff934d;
+      background: #fffbe5;
+      box-shadow: 0 2px 8px 0 #ffe7b969;
+    }
+    #svg-lines {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      left: 0; top: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <button class="node-btn" draggable="true" data-type="process">🔄 Process</button>
+    <button class="node-btn" draggable="true" data-type="decision">🔀 Decision</button>
+    <button class="node-btn" draggable="true" data-type="input">⬅️ Input</button>
+    <button class="node-btn" draggable="true" data-type="output">➡️ Output</button>
+  </div>
+  <div id="canvas-area">
+    <svg id="svg-lines"></svg>
+  </div>
+  <script>
+    // ===== 노드 생성 관련 =====
+    const canvas = document.getElementById('canvas-area');
+    let idCounter = 0;
+
+    // 드래그 정보
+    let dragNodeType = null;
+
+    document.querySelectorAll('.node-btn').forEach(btn => {
+      btn.addEventListener('dragstart', e => {
+        dragNodeType = e.target.getAttribute('data-type');
+      });
+      btn.addEventListener('dragend', e => {
+        dragNodeType = null;
+      });
+    });
+
+    canvas.addEventListener('dragover', e => {
+      e.preventDefault();
+    });
+
+    canvas.addEventListener('drop', e => {
+      if (!dragNodeType) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left - 50;
+      const y = e.clientY - rect.top - 20;
+      createNode(x, y, dragNodeType);
+      dragNodeType = null;
+    });
+
+    // ===== 노드 생성 함수 =====
+    function createNode(x, y, type) {
+      const node = document.createElement('div');
+      const id = 'node-' + (idCounter++);
+      node.className = 'node';
+      node.setAttribute('data-node-id', id);
+      node.setAttribute('data-type', type);
+
+      // 각 타입별 텍스트, 이모지
+      let inner = '';
+      if(type === 'process') inner = '🔄 Process';
+      else if(type === 'decision') inner = '🔀 Decision';
+      else if(type === 'input') inner = '⬅️ Input';
+      else if(type === 'output') inner = '➡️ Output';
+      node.innerHTML = inner;
+
+      node.style.left = x + 'px';
+      node.style.top = y + 'px';
+      canvas.appendChild(node);
+
+      makeNodeDraggable(node);
+      node.addEventListener('click', handleNodeClick);
+
+      return node;
+    }
+
+    // ===== 노드 이동(draggable) =====
+    function makeNodeDraggable(node) {
+      let offsetX, offsetY, startX, startY;
+      let dragging = false;
+
+      node.addEventListener('mousedown', e => {
+        if (e.ctrlKey || e.shiftKey) return; // 연결 모드 방지
+        dragging = true;
+        node.classList.add('selected');
+        offsetX = e.offsetX;
+        offsetY = e.offsetY;
+        startX = node.offsetLeft;
+        startY = node.offsetTop;
+        document.body.style.userSelect = 'none';
+      });
+
+      window.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        let left = e.clientX - rect.left - offsetX;
+        let top = e.clientY - rect.top - offsetY;
+
+        // 캔버스 밖으로 못 나가게
+        left = Math.max(0, Math.min(left, canvas.clientWidth - node.offsetWidth));
+        top = Math.max(0, Math.min(top, canvas.clientHeight - node.offsetHeight));
+
+        node.style.left = left + 'px';
+        node.style.top = top + 'px';
+        redrawConnections();
+      });
+
+      window.addEventListener('mouseup', e => {
+        if (dragging) {
+          dragging = false;
+          node.classList.remove('selected');
+          document.body.style.userSelect = '';
+        }
+      });
+    }
+
+    // ===== 연결선 관리 =====
+    let connectStartNode = null;
+    const connections = []; // {from: id, to: id}
+
+    function handleNodeClick(e) {
+      e.stopPropagation();
+      const node = e.currentTarget;
+      if (!connectStartNode) {
+        connectStartNode = node;
+        node.classList.add('selected');
+      } else if (connectStartNode === node) {
+        connectStartNode.classList.remove('selected');
+        connectStartNode = null;
+      } else {
+        // 이미 이 조합 있으면 중복 방지
+        const fromId = connectStartNode.getAttribute('data-node-id');
+        const toId = node.getAttribute('data-node-id');
+        if (!connections.find(c => c.from === fromId && c.to === toId)) {
+          connections.push({from: fromId, to: toId});
+        }
+        connectStartNode.classList.remove('selected');
+        connectStartNode = null;
+        redrawConnections();
+      }
+    }
+
+    // 캔버스 바탕 클릭: 연결모드 취소
+    canvas.addEventListener('click', () => {
+      if (connectStartNode) {
+        connectStartNode.classList.remove('selected');
+        connectStartNode = null;
+      }
+    });
+
+    // ===== 연결선 렌더링 =====
+    function redrawConnections() {
+      const svg = document.getElementById('svg-lines');
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      connections.forEach(conn => {
+        const from = document.querySelector(`[data-node-id="${conn.from}"]`);
+        const to = document.querySelector(`[data-node-id="${conn.to}"]`);
+        if (!from || !to) return;
+
+        const fromRect = from.getBoundingClientRect();
+        const toRect = to.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+
+        // 각 노드 중심좌표(캔버스 기준)
+        const x1 = fromRect.left - canvasRect.left + from.offsetWidth / 2;
+        const y1 = fromRect.top - canvasRect.top + from.offsetHeight / 2;
+        const x2 = toRect.left - canvasRect.left + to.offsetWidth / 2;
+        const y2 = toRect.top - canvasRect.top + to.offsetHeight / 2;
+
+        // 곡선 라인 (베지어)
+        const dx = Math.abs(x2 - x1) * 0.4;
+        const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+        const d = `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', '#47679b');
+        path.setAttribute('stroke-width', '3');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('marker-end', 'url(#arrowhead)');
+        svg.appendChild(path);
+      });
+
+      // 화살표 머리 정의 (한번만 추가)
+      if (!document.getElementById('arrowhead')) {
+        const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+        defs.innerHTML = `<marker id="arrowhead" markerWidth="10" markerHeight="7" 
+          refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#47679b"/>
+          </marker>`;
+        svg.appendChild(defs);
+      }
+    }
+  </script>
+  
