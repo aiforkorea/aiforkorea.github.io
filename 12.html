@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>워크플로 에디터</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            margin: 20px;
+        }
+
+        .palette {
+            width: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-right: 20px;
+        }
+
+        .palette h2 {
+            margin-top: 0;
+        }
+
+        .element {
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 8px;
+            margin-bottom: 5px;
+            cursor: grab;
+            position: relative; /* 연결점의 기준 */
+        }
+
+        .canvas {
+            flex-grow: 1;
+            border: 1px dashed #aaa;
+            min-height: 400px;
+            padding: 10px;
+            position: relative;
+            overflow: hidden; /* 캔버스 영역 벗어나는 연결 처리 */
+        }
+
+        .canvas h2 {
+            margin-top: 0;
+        }
+
+        .workflow-item {
+            position: absolute;
+            border: 1px solid #555;
+            padding: 10px;
+            cursor: move;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .workflow-item.start {
+            background-color: #ccffcc;
+        }
+
+        .workflow-item.process {
+            background-color: #e0f7fa;
+        }
+
+        .workflow-item.decision {
+            background-color: #ffe0b2;
+        }
+
+        .workflow-item.end {
+            background-color: #ffdddd;
+        }
+
+        .connection-point {
+            width: 10px;
+            height: 10px;
+            background-color: #337ab7;
+            border-radius: 50%;
+            position: absolute;
+            cursor: crosshair;
+        }
+
+        .connection-point.top {
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .connection-point.bottom {
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .connection-point.left {
+            left: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .connection-point.right {
+            right: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        #connectionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* SVG가 마우스 이벤트를 가로채지 않도록 */
+        }
+
+        .connection-line {
+            stroke: black;
+            stroke-width: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="palette">
+        <h2>요소 팔레트</h2>
+        <div class="element" draggable="true" data-type="start">시작</div>
+        <div class="element" draggable="true" data-type="process">프로세스</div>
+        <div class="element" draggable="true" data-type="decision">결정</div>
+        <div class="element" draggable="true" data-type="end">종료</div>
+    </div>
+    <div class="canvas" id="workflowCanvas">
+        <h2>워크플로 캔버스</h2>
+        <svg id="connectionCanvas"></svg>
+    </div>
+
+    <script>
+        const paletteElements = document.querySelectorAll('.palette .element');
+        const canvas = document.getElementById('workflowCanvas');
+        const connectionCanvas = document.getElementById('connectionCanvas');
+
+        let draggedPaletteElement = null;
+        let draggedCanvasElement = null;
+        let offsetX, offsetY;
+        let connections = [];
+        let drawingLine = null;
+        let startPoint = null;
+
+        // 팔레트 요소 드래그 시작
+        paletteElements.forEach(element => {
+            element.addEventListener('drag
